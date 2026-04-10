@@ -46,9 +46,10 @@ def ensure_pivot(name="CameraPivot"):
     pivot = bpy.data.objects.get(name)
 
     if pivot is None:
+        props = bpy.context.scene.turntable_properties
         pivot = bpy.data.objects.new(name, None)
         bpy.context.collection.objects.link(pivot)
-        pivot.empty_display_type = "ARROWS"
+        pivot.empty_display_type = props.pivot_display_type
         pivot.location = (0, 0, 0)
 
     return pivot
@@ -63,6 +64,21 @@ class TurntableProperties(PropertyGroup):
     pivot: EnumProperty(
         name="Pivot",
         items=get_empty_items,
+    )
+
+    pivot_display_type: EnumProperty(
+        name="Pivot Display Type",
+        items=[
+            ("PLAIN_AXES", "Plain Axes", ""),
+            ("ARROWS", "Arrows", ""),
+            ("SINGLE_ARROW", "Single Arrow", ""),
+            ("CIRCLE", "Circle", ""),
+            ("CUBE", "Cube", ""),
+            ("SPHERE", "Sphere", ""),
+            ("CONE", "Cone", ""),
+            ("IMAGE", "Image", "")
+        ],
+        default=1,
     )
 
     output_name: StringProperty(
@@ -294,6 +310,7 @@ class VIEW3D_PT_ui_panel(Panel):
         layout.prop(props, "camera")
         layout.prop(props, "pivot")
 
+        layout.prop(props, "pivot_display_type")
         layout.operator("object.create_camera_pivot", icon="EMPTY_AXIS")
         layout.operator("object.snap_pivot_to_selected", icon="PIVOT_CURSOR")
 
