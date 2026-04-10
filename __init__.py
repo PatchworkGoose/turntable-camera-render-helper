@@ -42,10 +42,10 @@ def get_empty_items(self, context):
     return items
 
 
-def ensure_pivot(name="CameraPivot"):
+def ensure_pivot(name="CameraPivot", new_pivot: bool = False):
     pivot = bpy.data.objects.get(name)
 
-    if pivot is None:
+    if pivot is None or new_pivot:
         props = bpy.context.scene.turntable_properties
         pivot = bpy.data.objects.new(name, None)
         bpy.context.collection.objects.link(pivot)
@@ -111,7 +111,7 @@ class OBJECT_OT_create_camera_pivot(Operator):
 
     def execute(self, context):
         props = context.scene.turntable_properties
-        pivot = ensure_pivot(props.pivot if props.pivot else "CameraPivot")
+        pivot = ensure_pivot(props.pivot if props.pivot else "CameraPivot", new_pivot=True)
         props.pivot = pivot.name
         self.report({"INFO"}, "CameraPivot created or already exists")
         return {"FINISHED"}
@@ -231,7 +231,7 @@ class RENDER_OT_turntable(Operator):
         scene = context.scene
 
         self.cam = bpy.data.objects.get(props.camera)
-        self.pivot = ensure_pivot(props.pivot if props.pivot else "CameraPivot")
+        self.pivot = ensure_pivot(props.pivot if props.pivot else "CameraPivot", False)
 
         if not self.cam:
             self.report({"ERROR"}, "Camera not found")
