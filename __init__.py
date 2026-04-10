@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Turntable Camera Render Helper",
     "author": "PatchworkGoose",
-    "version": (0, 0, 2),
+    "version": (0, 0, 3),
     "blender": (5, 0, 0),
 }
 
@@ -130,6 +130,22 @@ class OBJECT_OT_snap_pivot(Operator):
         return {"FINISHED"}
 
 
+class RENDER_OT_cancel(Operator):
+    bl_idname = "render.cancel_render"
+    bl_label = "Cancel Render"
+
+    bl_description = "Cancel the remaining renders."
+    def execute(self, context):
+        global ACTIVE_RENDER_OPERATOR
+        if ACTIVE_RENDER_OPERATOR is not None:
+            ACTIVE_RENDER_OPERATOR.cancel_requested = True
+            self.report({"WARNING"}, "Cancel requested")
+        else:
+            self.report({"INFO"}, "No active render")
+
+        return {"FINISHED"}
+
+
 class RENDER_OT_turntable(Operator):
     bl_idname = "render.turntable"
     bl_label = "Turntable Render"
@@ -140,6 +156,10 @@ class RENDER_OT_turntable(Operator):
 
     def modal(self, context, event):
         if event.type == "TIMER":
+
+            if self.cancel_requested:
+                self.finish(context, cancelled=True)
+                return {"CANCELLED"}
 
             if self.step >= self.steps:
                 self.finish(context)
@@ -158,6 +178,10 @@ class RENDER_OT_turntable(Operator):
             filename = f"{self.output_name}_{self.output_suffix}_{frame_number:04d}.png"
             context.scene.render.filepath = os.path.join(self.output_path, filename)
 
+            if self.cancel_requested:
+                self.finish(context, cancelled=True)
+                return {"CANCELLED"}
+
             # Render a single frame
             bpy.ops.render.render(write_still=True)
 
@@ -167,6 +191,10 @@ class RENDER_OT_turntable(Operator):
             if self.frame_index >= self.frame_count:
                 self.frame_index = 0
                 self.step += 1
+
+            if self.cancel_requested:
+                self.finish(context, cancelled=True)
+                return {"CANCELLED"}
 
         return {"PASS_THROUGH"}
 
@@ -242,7 +270,13 @@ class RENDER_OT_turntable(Operator):
         ACTIVE_RENDER_OPERATOR = None
         IS_RENDER_RUNNING = False
 
-        self.report({"INFO"}, "Render complete")
+        if cancelled:
+            self.report({"WARNING"}, "Render cancelled")
+        else:
+            self.report({"INFO"}, "Render complete")
+
+    def cancel(self, context):
+        self.finish(context, cancelled=True)
 
 
 class VIEW3D_PT_ui_panel(Panel):
@@ -253,7 +287,6 @@ class VIEW3D_PT_ui_panel(Panel):
     bl_label = "Turntable Helper"
 
     def draw(self, context):
-
         global IS_RENDER_RUNNING
         layout = self.layout
         props = context.scene.turntable_properties
@@ -276,10 +309,13 @@ class VIEW3D_PT_ui_panel(Panel):
         if not bpy.data.objects.get(props.camera): row.enabled = False
         row.operator("render.turntable", icon="RENDER_STILL")
 
+        layout.operator("render.cancel_render", icon="CANCEL")
+
 
 classes = (
     OBJECT_OT_create_camera_pivot,
     OBJECT_OT_snap_pivot,
+    RENDER_OT_cancel,
     RENDER_OT_turntable,
     TurntableProperties,
     VIEW3D_PT_ui_panel
