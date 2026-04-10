@@ -20,11 +20,23 @@ import math
 import os
 
 def get_camera_items(self, context):
-    return [(obj.name, obj.name, "") for obj in bpy.data.objects if obj.type == "CAMERA"]
+    items = []
+    for obj in bpy.data.objects:
+        if obj.type == "CAMERA":
+            items.append((obj.name, obj.name, ""))
+    if not items:
+        items.append(("None", "---", "No Camera Available"))
+    return items
 
 
 def get_empty_items(self, context):
-    return [(obj.name, obj.name, "") for obj in bpy.data.objects if obj.type == "EMPTY"]
+    items = []
+    for obj in bpy.data.objects:
+        if obj.type == "EMPTY":
+            items.append((obj.name, obj.name, ""))
+    if not items:
+        items.append(("CameraPivot", "---", "No Current Camera Pivot"))
+    return items
 
 
 def ensure_pivot(name="CameraPivot"):
