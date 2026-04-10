@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 bl_info = {
     "name": "Turntable Camera Render Helper",
     "author": "PatchworkGoose",
@@ -60,11 +62,13 @@ class TurntableProperties(PropertyGroup):
     camera: EnumProperty(
         name="Camera",
         items=get_camera_items,
+        description="The selected camera will be parented to an empty and rotated around it."
     )
 
     pivot: EnumProperty(
         name="Pivot",
         items=get_empty_items,
+        description="The selected pivot the camera will be parented to."
     )
 
     pivot_display_type: EnumProperty(
@@ -80,26 +84,33 @@ class TurntableProperties(PropertyGroup):
             ("IMAGE", "Image", "")
         ],
         default=1,
+        description="How the generated pivot empty will display."
     )
 
     output_name: StringProperty(
         name="Output Name",
+        default="name",
+        description="Optional string prefixed to output: {output_name}_{output_suffix}_{frame_number}",
     )
 
     output_suffix: StringProperty(
         name="Suffix",
         default="d",
+        description="Optional string to specify diffuse, normal, etc: {output_name}_{output_suffix}_{frame_number}"
     )
 
     output_directory: StringProperty(
         name="Output Folder",
+        default="/tmp\\",
         subtype="DIR_PATH",
+        description="Where the output will be saved."
     )
 
     steps: IntProperty(
         name="Steps",
         default=8,
         min=1,
+        description="How many directions to render."
     )
 
 
@@ -107,7 +118,7 @@ class OBJECT_OT_create_camera_pivot(Operator):
     bl_idname = "object.create_camera_pivot"
     bl_label = "Create Camera Pivot"
 
-    bl_description = "Creates an empty that will be used as a camera pivot"
+    bl_description = "Adds an empty that will be used as a camera pivot, if none is present it will be automatically added in the center when Turntable Render is pressed."
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -122,7 +133,7 @@ class OBJECT_OT_snap_pivot(Operator):
     bl_idname = "object.snap_pivot_to_selected"
     bl_label = "Snap Pivot to Selected"
 
-    bl_description = "Snap the camera pivot to selected object"
+    bl_description = "Snaps the camera pivot to the selected object. If multiple objects are selected it will snap to the mean average location."
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -200,7 +211,7 @@ class RENDER_OT_turntable(Operator):
 
             frame_number = (self.step * self.frame_count) + (self.frame_index + 1)
 
-            filename = f"{self.output_name}_{self.output_suffix}_{frame_number:04d}.png"
+            filename = f"{self.output_name}_{self.output_suffix}_{frame_number:04d}"
             context.scene.render.filepath = os.path.join(self.output_path, filename)
 
             if self.cancel_requested:
