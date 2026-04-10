@@ -18,6 +18,7 @@ from bpy.props import (
 )
 import math
 import os
+import mathutils
 
 IS_RENDER_RUNNING = False
 ACTIVE_RENDER_OPERATOR = None
@@ -126,23 +127,31 @@ class OBJECT_OT_snap_pivot(Operator):
 
     def execute(self, context):
         props = context.scene.turntable_properties
-        pivot = ensure_pivot(props.pivot if props.pivot else "CameraPivot")
+        pivot = ensure_pivot(props.pivot if props.pivot else "CameraPivot", False)
 
-        obj = context.active_object
-        if obj is None:
+        selected_objs = context.selected_objects
+        active_obj = context.active_object
+
+        if active_obj is None:
             self.report({"ERROR"}, "No active object selected")
             return {"CANCELLED"}
 
-        if obj == pivot:
+        if active_obj == pivot:
             self.report({"WARNING"}, "Pivot can't snap to itself")
             return {"CANCELLED"}
 
-        if pivot in context.selected_objects:
+        if pivot in selected_objs:
             self.report({"WARNING"}, "De-select the pivot before snapping")
             return {"CANCELLED"}
 
-        pivot.location = obj.location
-        self.report({"INFO"}, f"Pivot snapped to {obj.name}")
+        if len(selected_objs) > 1:
+            total_location = sum((obj.matrix_world.to_translation() for obj in selected_objs), mathutils.Vector())
+            avg_location = total_location / len(selected_objs)
+            pivot.location = avg_location
+            self.report({"INFO"}, f"Pivot snapped to {avg_location}")
+        else:
+            pivot.location = active_obj.location
+            self.report({"INFO"}, f"Pivot snapped to {active_obj.name}")
         return {"FINISHED"}
 
 
