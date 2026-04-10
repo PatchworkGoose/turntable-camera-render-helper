@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Turntable Camera Render Helper",
     "author": "PatchworkGoose",
-    "version": (0, 0, 1),
+    "version": (0, 0, 2),
     "blender": (5, 0, 0),
 }
 
@@ -18,6 +18,9 @@ from bpy.props import (
 )
 import math
 import os
+
+IS_RENDER_RUNNING = False
+ACTIVE_RENDER_OPERATOR = None
 
 def get_camera_items(self, context):
     items = []
@@ -58,7 +61,7 @@ class TurntableProperties(PropertyGroup):
     )
 
     pivot: EnumProperty(
-        name="CameraPivot",
+        name="Pivot",
         items=get_empty_items,
     )
 
@@ -129,60 +132,117 @@ class OBJECT_OT_snap_pivot(Operator):
 
 class RENDER_OT_turntable(Operator):
     bl_idname = "render.turntable"
-    bl_label = "Render Turntable"
-    bl_description = "Do the thing"
+    bl_label = "Turntable Render"
+
+    bl_description = "Render with current settings."
+
+    _timer = None
+
+    def modal(self, context, event):
+        if event.type == "TIMER":
+
+            if self.step >= self.steps:
+                self.finish(context)
+                return {"FINISHED"}
+
+            # Set pivot rotation
+            angle = (360 / self.steps) * self.step
+            self.pivot.rotation_euler[2] = math.radians(angle)
+
+            # Set frame
+            frame = self.frame_start + self.frame_index
+            context.scene.frame_set(frame)
+
+            frame_number = (self.step * self.frame_count) + (self.frame_index + 1)
+
+            filename = f"{self.output_name}_{self.output_suffix}_{frame_number:04d}.png"
+            context.scene.render.filepath = os.path.join(self.output_path, filename)
+
+            # Render a single frame
+            bpy.ops.render.render(write_still=True)
+
+            # Advance the frame
+            self.frame_index += 1
+
+            if self.frame_index >= self.frame_count:
+                self.frame_index = 0
+                self.step += 1
+
+        return {"PASS_THROUGH"}
 
     def execute(self, context):
+        global IS_RENDER_RUNNING, ACTIVE_RENDER_OPERATOR
+
+        if IS_RENDER_RUNNING:
+            self.report({"WARNING"}, "Render already running")
+            return {"CANCELLED"}
+        if ACTIVE_RENDER_OPERATOR is not None and not ACTIVE_RENDER_OPERATOR == self:
+            self.report({"ERROR"}, "Another render instance detected")
+            return {"CANCELLED"}
+
+        IS_RENDER_RUNNING = True
+        ACTIVE_RENDER_OPERATOR = self
+
         props = context.scene.turntable_properties
         scene = context.scene
 
-        cam = bpy.data.objects.get(props.camera)
-        pivot = ensure_pivot(props.pivot if props.pivot else "CameraPivot")
+        self.cam = bpy.data.objects.get(props.camera)
+        self.pivot = ensure_pivot(props.pivot if props.pivot else "CameraPivot")
 
-        if cam is None:
-            self.report({"ERROR"}, "Camera or Pivot not found")
+        if not self.cam:
+            self.report({"ERROR"}, "Camera not found")
             return {"CANCELLED"}
 
-        # Parent Camera
-        if cam.parent != pivot:
-            # Keep world transform
-            matrix_world = cam.matrix_world.copy()
-            cam.parent = pivot
-            cam.matrix_parent_inverse = pivot.matrix_world.inverted()
-            cam.matrix_world = matrix_world
+        # Parent camera
+        if self.cam.parent != self.pivot:
+            matrix_world = self.cam.matrix_world.copy()
+            self.cam.parent = self.pivot
+            self.cam.matrix_parent_inverse = self.pivot.matrix_world.inverted()
+            self.cam.matrix_world = matrix_world
 
-        scene.camera = cam
+        scene.camera = self.cam
 
         # Output
         if props.output_directory:
-            output_path = bpy.path.abspath(props.output_directory)
+            self.output_path = bpy.path.abspath(props.output_directory)
         else:
             self.report({"ERROR"}, "No Output Folder")
             return {"CANCELLED"}
 
-        frame_count = scene.frame_end - scene.frame_start + 1
-        original_rotation = pivot.rotation_euler.copy()
+        # Save properties
+        self.steps = props.steps
+        self.output_name = props.output_name
+        self.output_suffix = props.output_suffix
 
-        for i in range(props.steps):
-            angle = (360 / props.steps) * i
-            pivot.rotation_euler[2] = math.radians(angle)
+        self.frame_start = scene.frame_start
+        self.frame_end = scene.frame_end
+        self.frame_count = self.frame_end - self.frame_start + 1
 
-            for frame in range(scene.frame_start, scene.frame_end + 1):
-                scene.frame_set(frame)
+        self.step = 0
+        self.frame_index = 0
 
-                frame_number = (i * frame_count) + (frame - scene.frame_start + 1)
+        self.original_rotation = self.pivot.rotation_euler.copy()
 
-                filename = f"{props.output_name}_{props.output_suffix}_{frame_number:04d}.png"
-                scene.render.filepath = os.path.join(output_path, filename)
+        self.cancel_requested = False
 
-                bpy.ops.render.render(write_still=True)
+        # Start timer
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.1, window=context.window)
+        wm.modal_handler_add(self)
 
-        # Reset
-        pivot.rotation_euler = original_rotation
-        scene.render.filepath = props.output_directory
+        self.report({"INFO"}, "Rendering started")
+        return {"RUNNING_MODAL"}
 
-        self.report({"INFO"}, f"Rendering complete: {output_path}")
-        return {"FINISHED"}
+    def finish(self, context, cancelled=False):
+        global ACTIVE_RENDER_OPERATOR, IS_RENDER_RUNNING
+
+        context.window_manager.event_timer_remove(self._timer)
+        self.pivot.rotation_euler = self.original_rotation
+
+        ACTIVE_RENDER_OPERATOR = None
+        IS_RENDER_RUNNING = False
+
+        self.report({"INFO"}, "Render complete")
 
 
 class VIEW3D_PT_ui_panel(Panel):
@@ -194,6 +254,7 @@ class VIEW3D_PT_ui_panel(Panel):
 
     def draw(self, context):
 
+        global IS_RENDER_RUNNING
         layout = self.layout
         props = context.scene.turntable_properties
 
@@ -210,7 +271,10 @@ class VIEW3D_PT_ui_panel(Panel):
         layout.prop(props, "output_directory")
         layout.prop(props, "steps")
 
-        layout.operator("render.turntable", icon="RENDER_STILL")
+        row = layout.row()
+        row.enabled = not IS_RENDER_RUNNING
+        if not bpy.data.objects.get(props.camera): row.enabled = False
+        row.operator("render.turntable", icon="RENDER_STILL")
 
 
 classes = (
